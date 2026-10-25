@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Find the invoices that put your GST input tax credit at risk. Compare your purchase register with GSTR-2B and get a mismatch report in Excel.">
+<title>GST Mismatch Checker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: sticky nav; two-column hero with a product window; flow diagram of where mismatches start; problem cards; tabbed worked example; file guide; comparison; limits; FAQ; closing band. Ledger-green ink, red-pen marks for problems. */
+  :root {
+    --bg: #F1F5F3;
+    --surface: #FFFFFF;
+    --ink: #0C1F22;
+    --muted: #4F6468;
+    --line: #D3DEDA;
+    --accent: #0A6C74;
+    --accent-ink: #FFFFFF;
+    --tint: #E3EEEA;
+    --rule: rgba(10, 108, 116, 0.10);
+    --good: #1E7B4F;
+    --bad: #D1352B;
+    --warn: #B7791F;
+    --info: #5568B0;
+    --band: #0C2E33;
+    --band-ink: #E6F2EF;
+    --band-muted: #9CBDB9;
+    --shadow: rgba(12, 31, 34, 0.35);
+    --font-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0A1517; --surface: #112124; --ink: #E4EFEC; --muted: #8FA8A6; --line: #1F3538;
+      --accent: #4FC3CC; --accent-ink: #04181A; --tint: #15292C; --rule: rgba(79, 195, 204, 0.10);
+      --good: #52C58A; --bad: #FF7A6E; --warn: #E6B450; --info: #9DB0F0;
+      --band: #0F2A2E; --band-ink: #E6F2EF; --band-muted: #8FB1AD; --shadow: rgba(0, 0, 0, 0.6); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0A1517; --surface: #112124; --ink: #E4EFEC; --muted: #8FA8A6; --line: #1F3538;
+    --accent: #4FC3CC; --accent-ink: #04181A; --tint: #15292C; --rule: rgba(79, 195, 204, 0.10);
+    --good: #52C58A; --bad: #FF7A6E; --warn: #E6B450; --info: #9DB0F0;
+    --band: #0F2A2E; --band-ink: #E6F2EF; --band-muted: #8FB1AD; --shadow: rgba(0, 0, 0, 0.6); color-scheme: dark;
+  }
+
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.6; }
+  h1, h2, h3, h4, p, ul, dl, dd { margin: 0; }
+  ul { padding: 0; list-style: none; }
+  a { color: inherit; }
+  a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+  .in { width: 100%; max-width: 1152px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { display: flex; flex-direction: column; gap: 72px; padding-block: 8px 72px; }
+  @media (min-width: 900px) { main { gap: 116px; padding-block: 16px 104px; } }
+
+  h1 { font-family: var(--font-display); font-size: clamp(36px, 9vw, 66px); line-height: 1.02; font-weight: 700; letter-spacing: -0.035em; text-wrap: balance; }
+  h2 { font-family: var(--font-display); font-size: clamp(26px, 5.4vw, 40px); line-height: 1.1; font-weight: 650; letter-spacing: -0.025em; text-wrap: balance; }
+  h3 { font-size: 17px; font-weight: 600; line-height: 1.3; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+  .lead { font-size: 18px; color: var(--muted); max-width: 60ch; }
+  .sec-head { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
+
+  /* nav */
+  .nav { position: sticky; top: 0; z-index: 30; background: var(--bg); border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top, 0px); }
+  @supports (background: color-mix(in srgb, red, blue)) { .nav { background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); } }
+  .nav .in { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 62px; }
+  .brand { font-family: var(--font-display); font-weight: 650; font-size: 16px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 9px; text-decoration: none; white-space: nowrap; }
+  .mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); display: inline-grid; place-items: center; flex: none; }
+  .mark svg { width: 16px; height: 16px; }
+  .nav-links { display: none; gap: 28px; font-size: 14.5px; }
+  .nav-links a { color: var(--muted); text-decoration: none; }
+  .nav-links a:hover { color: var(--ink); }
+  @media (min-width: 880px) { .nav-links { display: flex; } }
+
+  a.btn { display: inline-block; padding: 14px 24px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none; text-align: center; transition: transform .15s ease, filter .15s ease; }
+  a.btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  a.btn.small { padding: 9px 15px; font-size: 14px; border-radius: 8px; white-space: nowrap; }
+  a.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  a.btn.ghost:hover { border-color: var(--accent); filter: none; }
+
+  /* hero */
+  .hero { display: grid; gap: 44px; padding-top: 36px; }
+  @media (min-width: 960px) { .hero { grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr); align-items: center; gap: 56px; padding-top: 64px; } }
+  .hero-copy { display: flex; flex-direction: column; gap: 22px; align-items: flex-start; }
+  .hero h1 em { font-style: normal; position: relative; white-space: nowrap; }
+  .hero h1 em svg { position: absolute; left: -2%; bottom: -0.2em; width: 104%; height: 0.32em; overflow: visible; }
+  .hero h1 em path { fill: none; stroke: var(--bad); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 260; stroke-dashoffset: 0; animation: pen .9s ease-out .15s both; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; width: 100%; max-width: 520px; padding-top: 22px; margin-top: 4px; border-top: 1px solid var(--line); }
+  .fact b { display: block; font-family: var(--font-display); font-size: clamp(22px, 5vw, 30px); line-height: 1.1; letter-spacing: -0.02em; }
+  .fact span { font-size: 13px; color: var(--muted); line-height: 1.35; display: block; margin-top: 4px; }
+
+  /* product window */
+  .win { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; min-width: 0; box-shadow: 0 1px 0 var(--line), 0 34px 60px -34px var(--shadow); }
+  @media (min-width: 1000px) { .win { transform: perspective(1400px) rotateY(-5deg) rotateX(1.5deg); transform-origin: left center; } }
+  .win-bar { display: flex; align-items: center; gap: 7px; padding: 12px 16px; background: var(--tint); border-bottom: 1px solid var(--line); }
+  .win-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); display: block; flex: none; }
+  .win-bar span { margin-left: 8px; font-family: var(--font-data); font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .win-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; background-image: repeating-linear-gradient(to bottom, transparent 0 35px, var(--rule) 35px 36px); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 10px; }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tile small { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .tile b { font-family: var(--font-data); font-weight: 500; font-size: 19px; font-variant-numeric: tabular-nums; color: var(--c, var(--ink)); }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .cols span:last-child { text-align: right; }
+  .rows { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr); align-items: center; height: 54px; }
+  .chip { font-family: var(--font-data); font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
+  .chip.right { text-align: right; }
+  .chip.ghost { border-style: dashed; background: transparent; color: var(--muted); font-family: var(--font-body); font-size: 12px; }
+  .link { position: relative; height: 26px; }
+  .link::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid var(--c); transform-origin: left center; animation: draw .8s ease-out both; }
+  .link.dash::before { border-top-style: dashed; }
+  .link i { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%; background: var(--c); color: #fff; font-style: normal; font-size: 13px; font-weight: 700; display: grid; place-items: center; line-height: 1; animation: pop .45s cubic-bezier(.3, 1.6, .5, 1) .25s both; }
+  .row:nth-child(2) .link::before, .row:nth-child(2) .link i { animation-delay: .1s; }
+  .row:nth-child(3) .link::before, .row:nth-child(3) .link i { animation-delay: .2s; }
+  .row:nth-child(4) .link::before, .row:nth-child(4) .link i { animation-delay: .3s; }
+  .row:nth-child(5) .link::before, .row:nth-child(5) .link i { animation-delay: .4s; }
+  .c-ok { --c: var(--good); } .c-diff { --c: var(--warn); } .c-miss { --c: var(--bad); } .c-typo { --c: var(--info); } .c-books { --c: var(--warn); }
+  .key { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 16px 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); background: var(--surface); }
+  .key span { display: inline-flex; align-items: center; gap: 6px; }
+  .key b { width: 10px; height: 10px; border-radius: 50%; background: var(--c); display: inline-block; }
+  @keyframes draw { from { transform: scaleX(.12); opacity: .5; } to { transform: scaleX(1); opacity: 1; } }
+  @keyframes pop { from { transform: scale(.55); } to { transform: scale(1); } }
+  @keyframes pen { from { stroke-dashoffset: 260; } to { stroke-dashoffset: 0; } }
+
+  section { display: flex; flex-direction: column; gap: 36px; }
+
+  /* flow */
+  .flow { display: grid; grid-template-columns: minmax(0, 1fr); gap: 34px; counter-reset: node; }
+  @media (min-width: 900px) { .flow { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 30px; } }
+  .node { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 18px 18px; display: flex; flex-direction: column; gap: 8px; }
+  .node::before { counter-increment: node; content: counter(node); position: absolute; top: -14px; left: 18px; width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-family: var(--font-data); font-size: 13px; }
+  .node:not(:last-child)::after { content: "↓"; position: absolute; left: 50%; bottom: -29px; transform: translateX(-50%); color: var(--muted); font-size: 18px; line-height: 1; }
+  @media (min-width: 900px) { .node:not(:last-child)::after { content: "→"; left: auto; right: -25px; bottom: auto; top: 50%; transform: translateY(-50%); } }
+  .node p { color: var(--muted); font-size: 15px; }
+  .node.you { border-color: var(--accent); box-shadow: 0 0 0 3px var(--rule); }
+  .node.you::before { background: var(--accent); color: var(--accent-ink); }
+  .node .tag { align-self: flex-start; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  .callout { border-left: 3px solid var(--bad); padding: 4px 0 4px 16px; color: var(--muted); max-width: 70ch; }
+  .callout b { color: var(--ink); font-weight: 600; }
+
+  /* problem cards */
+  .cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  @media (min-width: 760px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .glyph { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--c); color: #fff; font-weight: 700; font-size: 18px; line-height: 1; }
+  .card p { color: var(--muted); font-size: 15.5px; }
+  .todo { margin-top: auto; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 14px; color: var(--ink); }
+  .todo b { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: block; margin-bottom: 2px; }
+
+  /* worked example */
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tab { font: inherit; font-size: 14.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px 9px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+  .tab i { width: 22px; height: 22px; border-radius: 50%; background: var(--c); color: #fff; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; line-height: 1; }
+  .tab:hover { border-color: var(--c); }
+  .tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .case { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  @media (min-width: 820px) { .case { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .case .why { grid-column: 1 / -1; } }
+  .doc { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-width: 0; }
+  .doc.empty { border-style: dashed; background: transparent; }
+  .doc-h { padding: 10px 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--tint); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; }
+  .doc.empty .doc-h { background: transparent; }
+  .doc dl { padding: 6px 16px 10px; }
+  .doc dl div { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .doc dl div:last-child { border-bottom: 0; }
+  .doc dt { color: var(--muted); }
+  .doc dd { font-family: var(--font-data); font-size: 13.5px; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .doc dd.diff { color: var(--bad); font-weight: 500; text-decoration: underline wavy var(--bad); text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
+  .doc .none { padding: 34px 16px; text-align: center; color: var(--muted); font-size: 14.5px; }
+  .why { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 12px; padding: 18px 20px; display: grid; gap: 14px; }
+  @media (min-width: 820px) { .why { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; } }
+  .why h4 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .why p { font-size: 15.5px; }
+
+  /* files */
+  .two { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  @media (min-width: 820px) { .two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .guide { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .guide ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 15.5px; }
+  .guide ol li::marker { color: var(--accent); font-weight: 600; }
+  .cols-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cols-list span { font-family: var(--font-data); font-size: 12.5px; padding: 3px 9px; border-radius: 6px; background: var(--tint); }
+  .guide small { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  code { font-family: var(--font-data); font-size: 0.9em; background: var(--tint); padding: 1px 6px; border-radius: 4px; }
+
+  /* compare */
+  .compare { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  @media (min-width: 900px) { .compare { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .cmp { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .cmp.us { border-color: var(--accent); box-shadow: 0 0 0 3px var(--rule); }
+  .cmp h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .cmp h3 span { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  .cmp li { display: flex; flex-direction: column; font-size: 15px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .cmp li b { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .cmp:not(.us) li { color: var(--muted); }
+
+  /* limits */
+  .split { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+  @media (min-width: 820px) { .split { grid-template-columns: repeat(2, minmax(0, 1fr)); } .split > div + div { border-left: 1px solid var(--line); border-top: 0; } }
+  .split > div { padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+  .split > div + div { border-top: 1px solid var(--line); }
+  @media (min-width: 820px) { .split > div + div { border-top: 0; } }
+  .split li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; font-size: 15.5px; color: var(--muted); }
+  .split li::before { content: "✓"; color: var(--good); font-weight: 700; }
+  .split .not li::before { content: "–"; color: var(--warn); }
+  .split h3 { font-family: var(--font-display); font-size: 20px; }
+
+  /* faq */
+  .faq { display: flex; flex-direction: column; border-top: 1px solid var(--line); max-width: 820px; }
+  .faq details { border-bottom: 1px solid var(--line); }
+  .faq summary { cursor: pointer; list-style: none; padding: 18px 40px 18px 0; font-weight: 600; position: relative; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 22px; font-weight: 400; color: var(--accent); line-height: 1; }
+  .faq details[open] summary::after { content: "–"; }
+  .faq details p { padding: 0 40px 20px 0; color: var(--muted); max-width: 66ch; }
+
+  /* feedback */
+  .feedback { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 22px 40px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); padding: 28px 24px; }
+  .feedback > div { flex: 1 1 340px; display: flex; flex-direction: column; gap: 10px; }
+  .feedback h2 { font-size: clamp(22px, 4.6vw, 30px); }
+  .feedback .lead { font-size: 16.5px; }
+  .feedback a.btn { flex: none; }
+
+  /* closing */
+  .band { background: var(--band); color: var(--band-ink); border-radius: 22px; padding: 40px 24px; display: grid; gap: 28px; }
+  @media (min-width: 860px) { .band { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); padding: 56px; align-items: center; gap: 48px; } }
+  .band h2 { color: var(--band-ink); }
+  .band p { color: var(--band-muted); max-width: 52ch; margin-top: 12px; }
+  .band .actions { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+  .band a.btn { background: var(--band-ink); color: var(--band); }
+  .band .note { font-size: 13.5px; color: var(--band-muted); }
+
+  footer { border-top: 1px solid var(--line); padding-block: 34px 44px; }
+  footer .in { display: grid; gap: 26px; }
+  @media (min-width: 820px) { footer .in { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 60px; } }
+  footer p { font-size: 13.5px; color: var(--muted); max-width: 62ch; }
+  footer ul { display: flex; flex-wrap: wrap; gap: 10px 22px; font-size: 14px; }
+  footer ul a { color: var(--muted); text-decoration: none; }
+  footer ul a:hover { color: var(--ink); }
+
+  @media (max-width: 359px) { .brand { white-space: normal; font-size: 15px; line-height: 1.15; } main { gap: 60px; } }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="#top">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3.2 3.2L13 4.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      GST Mismatch Checker
+    </a>
+    <nav class="nav-links" aria-label="Page sections">
+      <a href="#why">Why it matters</a>
+      <a href="#finds">What it finds</a>
+      <a href="#example">Example</a>
+      <a href="#files">Your files</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn small" href="checker.html">Open tool</a>
+  </div>
+</header>
+
+<main class="in" id="top">
+
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">GSTR-2B reconciliation for CAs and small businesses</p>
+      <h1>Find the invoices that put your GST credit <em>at risk.<svg viewBox="0 0 200 20" preserveAspectRatio="none" aria-hidden="true"><path d="M3 12 C 30 4, 52 18, 80 10 S 135 4, 160 12 S 190 8, 197 10"/></svg></em></h1>
+      <p class="lead">Upload your purchase register and your GSTR-2B. The tool matches every invoice, sorts the problems, and gives you an Excel report before you file GSTR-3B.</p>
+      <div class="cta-row">
+        <a class="btn" href="checker.html">Try it with sample data</a>
+        <a class="btn ghost" href="#example">See how a mismatch looks</a>
+      </div>
+      <div class="facts">
+        <div class="fact"><b>~2 min</b><span>from upload to Excel report</span></div>
+        <div class="fact"><b>0</b><span>files sent to a server</span></div>
+        <div class="fact"><b>Free</b><span>to try, no sign-up</span></div>
+      </div>
+    </div>
+
+    <div class="win" role="img" aria-label="Preview of the tool showing five sample invoices matched between your books and GSTR-2B. One matches, one has a different tax amount, one is missing from GSTR-2B, one has a possible invoice number typo, and one is missing from your books.">
+      <div class="win-bar"><i></i><i></i><i></i><span>GST Mismatch Checker · sample data</span></div>
+      <div class="win-body">
+        <div class="tiles">
+          <div class="tile" style="--c:var(--bad)"><small>ITC at risk</small><b id="risk-num">₹81,720</b></div>
+          <div class="tile" style="--c:var(--good)"><small>Matched</small><b>30</b></div>
+          <div class="tile" style="--c:var(--warn)"><small>Mismatch</small><b>3</b></div>
+          <div class="tile" style="--c:var(--bad)"><small>Not in 2B</small><b>3</b></div>
+        </div>
+        <div>
+          <div class="cols"><span>Your books</span><span></span><span>GSTR-2B</span></div>
+          <div class="rows">
+            <div class="row"><span class="chip">INV/0014</span><span class="link c-ok"><i>✓</i></span><span class="chip right">INV/0014</span></div>
+            <div class="row"><span class="chip">INV/0021</span><span class="link c-diff"><i>≠</i></span><span class="chip right">INV/0021</span></div>
+            <div class="row"><span class="chip">INV/0004</span><span class="link c-miss dash"><i>✕</i></span><span class="chip ghost right">not on portal</span></div>
+            <div class="row"><span class="chip">INV/0010</span><span class="link c-typo dash"><i>?</i></span><span class="chip right">INV/9010</span></div>
+            <div class="row"><span class="chip ghost">not in books</span><span class="link c-books dash"><i>+</i></span><span class="chip right">INV/0008</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="key">
+        <span style="--c:var(--good)"><b></b>Matched</span>
+        <span style="--c:var(--warn)"><b></b>Amount differs</span>
+        <span style="--c:var(--bad)"><b></b>Missing in GSTR-2B</span>
+        <span style="--c:var(--info)"><b></b>Possible typo</span>
+      </div>
+    </div>
+  </div>
+
+  <section id="why">
+    <div class="sec-head">
+      <p class="eyebrow">Why it matters</p>
+      <h2>Your credit depends on what your suppliers filed, not on what you recorded.</h2>
+      <p class="lead">Input tax credit (ITC) is the GST you paid on purchases that you can set off against the GST you collect. To claim it, the supplier's invoice generally has to show up in your GSTR-2B. Every month the two sides can drift apart, and the gap is where credit gets stuck.</p>
+    </div>
+    <div class="flow">
+      <div class="node"><h3>Your supplier files</h3><p>They report their sales, including the invoice they gave you, in their own GST return.</p></div>
+      <div class="node"><h3>The portal builds GSTR-2B</h3><p>The GST portal collects what suppliers filed and prepares your GSTR-2B statement for the month.</p></div>
+      <div class="node you"><span class="tag">This tool</span><h3>You compare it with your books</h3><p>Match your purchase register against GSTR-2B and see every invoice that does not line up.</p></div>
+      <div class="node"><h3>You claim credit in GSTR-3B</h3><p>You file your monthly return and claim ITC, knowing which invoices are safe to claim.</p></div>
+    </div>
+    <p class="callout"><b>Doing step 3 by hand is the slow part.</b> With hundreds of invoices, a single typo in an invoice number or a supplier who filed late is easy to miss. This tool does that step in about two minutes.</p>
+  </section>
+
+  <section id="finds">
+    <div class="sec-head">
+      <p class="eyebrow">What it finds</p>
+      <h2>Four kinds of problems, sorted for you.</h2>
+      <p class="lead">Every invoice lands in exactly one group, so you know what to fix first.</p>
+    </div>
+    <div class="cards">
+      <div class="card"><span class="glyph" style="--c:var(--bad)">✕</span><h3>Missing in GSTR-2B</h3><p>You recorded the invoice but the portal does not show it. The supplier may not have filed yet, or filed it under another GSTIN.</p><div class="todo"><b>What to do</b>Follow up with the supplier before you claim this credit.</div></div>
+      <div class="card"><span class="glyph" style="--c:var(--warn)">≠</span><h3>Amount mismatch</h3><p>The invoice is in both places but the tax is different. You see the exact difference in rupees, and whether you claimed more or less.</p><div class="todo"><b>What to do</b>Check which figure matches the paper invoice, then fix your books or ask the supplier to amend.</div></div>
+      <div class="card"><span class="glyph" style="--c:var(--warn)">+</span><h3>Missing in books</h3><p>The portal shows a purchase you never recorded. Either an entry was missed, or the supplier used your GSTIN by mistake.</p><div class="todo"><b>What to do</b>Look for the bill. If it is yours, record it. If not, tell the supplier.</div></div>
+      <div class="card"><span class="glyph" style="--c:var(--info)">?</span><h3>Possible match</h3><p>Same supplier, same amounts, slightly different invoice number. It is usually a typo on one side, and the tool pairs the two for you.</p><div class="todo"><b>What to do</b>Confirm they are the same bill and correct the number so it matches next month.</div></div>
+    </div>
+  </section>
+
+  <section id="example">
+    <div class="sec-head">
+      <p class="eyebrow">Worked example</p>
+      <h2>See what each problem looks like.</h2>
+      <p class="lead">These are real rows from the sample data in the tool. Pick a problem to compare your books with GSTR-2B.</p>
+    </div>
+    <div>
+      <div class="tabs" role="tablist" aria-label="Problem types">
+        <button class="tab" role="tab" id="t1" aria-selected="true" aria-controls="p1" style="--c:var(--bad)"><i>✕</i>Missing in GSTR-2B</button>
+        <button class="tab" role="tab" id="t2" aria-selected="false" aria-controls="p2" style="--c:var(--warn)"><i>≠</i>Amount mismatch</button>
+        <button class="tab" role="tab" id="t3" aria-selected="false" aria-controls="p3" style="--c:var(--warn)"><i>+</i>Missing in books</button>
+        <button class="tab" role="tab" id="t4" aria-selected="false" aria-controls="p4" style="--c:var(--info)"><i>?</i>Possible match</button>
+      </div>
+    </div>
+
+    <div class="case" role="tabpanel" id="p1" aria-labelledby="t1">
+      <div class="doc"><div class="doc-h"><span>In your books</span><span>INV/0004</span></div><dl>
+        <div><dt>Supplier GSTIN</dt><dd>29BBBPB2345B1Z6</dd></div><div><dt>Invoice date</dt><dd>05-09-2026</dd></div><div><dt>Taxable value</dt><dd>₹1,48,000</dd></div><div><dt>Tax</dt><dd class="diff">₹26,640</dd></div></dl></div>
+      <div class="doc empty"><div class="doc-h"><span>On GSTR-2B</span><span>not found</span></div><div class="none">No invoice from this supplier with this number.</div></div>
+      <div class="why" style="--c:var(--bad)"><div><h4>What happened</h4><p>The supplier has not reported this invoice, or reported it under a different GSTIN. Until it appears on GSTR-2B, the <b>₹26,640</b> credit is at risk.</p></div><div><h4>Counts toward</h4><p>ITC at risk, in full.</p></div></div>
+    </div>
+
+    <div class="case" role="tabpanel" id="p2" aria-labelledby="t2" hidden>
+      <div class="doc"><div class="doc-h"><span>In your books</span><span>INV/0021</span></div><dl>
+        <div><dt>Supplier GSTIN</dt><dd>19FFFPF6789F1Z1</dd></div><div><dt>Taxable value</dt><dd>₹1,39,000</dd></div><div><dt>Tax</dt><dd class="diff">₹25,020</dd></div></dl></div>
+      <div class="doc"><div class="doc-h"><span>On GSTR-2B</span><span>INV/0021</span></div><dl>
+        <div><dt>Supplier GSTIN</dt><dd>19FFFPF6789F1Z1</dd></div><div><dt>Taxable value</dt><dd>₹1,39,000</dd></div><div><dt>Tax</dt><dd class="diff">₹25,920</dd></div></dl></div>
+      <div class="why" style="--c:var(--warn)"><div><h4>What happened</h4><p>The portal shows <b>₹900 more tax</b> than your books. Either your entry is short or the supplier reported too much. The tool shows the difference as −₹900 (books minus GSTR-2B).</p></div><div><h4>Counts toward</h4><p>ITC at risk only when your books claim <i>more</i> than the portal supports.</p></div></div>
+    </div>
+
+    <div class="case" role="tabpanel" id="p3" aria-labelledby="t3" hidden>
+      <div class="doc empty"><div class="doc-h"><span>In your books</span><span>not found</span></div><div class="none">No entry for this invoice in your purchase register.</div></div>
+      <div class="doc"><div class="doc-h"><span>On GSTR-2B</span><span>INV/0008</span></div><dl>
+        <div><dt>Supplier GSTIN</dt><dd>29BBBPB2345B1Z6</dd></div><div><dt>Invoice date</dt><dd>05-09-2026</dd></div><div><dt>Taxable value</dt><dd>₹1,77,000</dd></div><div><dt>Tax</dt><dd class="diff">₹31,860</dd></div></dl></div>
+      <div class="why" style="--c:var(--warn)"><div><h4>What happened</h4><p>The portal lists a purchase of <b>₹31,860</b> tax that is not in your books. An entry may have been missed, or the supplier used your GSTIN by mistake.</p></div><div><h4>Counts toward</h4><p>Not ITC at risk. You may be missing a credit you could claim.</p></div></div>
+    </div>
+
+    <div class="case" role="tabpanel" id="p4" aria-labelledby="t4" hidden>
+      <div class="doc"><div class="doc-h"><span>In your books</span><span>INV/0010</span></div><dl>
+        <div><dt>Supplier GSTIN</dt><dd>27AAAPA1234A1Z5</dd></div><div><dt>Invoice no.</dt><dd class="diff">INV/0010</dd></div><div><dt>Taxable value</dt><dd>₹1,54,000</dd></div><div><dt>Tax</dt><dd>₹27,720</dd></div></dl></div>
+      <div class="doc"><div class="doc-h"><span>On GSTR-2B</span><span>INV/9010</span></div><dl>
+        <div><dt>Supplier GSTIN</dt><dd>27AAAPA1234A1Z5</dd></div><div><dt>Invoice no.</dt><dd class="diff">INV/9010</dd></div><div><dt>Taxable value</dt><dd>₹1,54,000</dd></div><div><dt>Tax</dt><dd>₹27,720</dd></div></dl></div>
+      <div class="why" style="--c:var(--info)"><div><h4>What happened</h4><p>Same supplier, same taxable value, same tax. Only the invoice number differs, so this is very likely one bill with a typo. The tool pairs the two instead of calling both missing.</p></div><div><h4>Counts toward</h4><p>Nothing yet. Confirm it is the same bill first.</p></div></div>
+    </div>
+  </section>
+
+  <section id="files">
+    <div class="sec-head">
+      <p class="eyebrow">Your files</p>
+      <h2>What to upload, and where to get it.</h2>
+      <p class="lead">Excel or CSV, as exported. Title rows, extra sheets and two-row headers are fine. The tool finds the header row and the right sheet on its own.</p>
+    </div>
+    <div class="two">
+      <div class="guide">
+        <h3>Purchase register</h3>
+        <ol>
+          <li>Export your purchases for the month from your accounting software, or use your own Excel sheet.</li>
+          <li>Make sure each row is one invoice.</li>
+          <li>Save it as <code>.xlsx</code> or <code>.csv</code>.</li>
+        </ol>
+        <small>Columns it recognises</small>
+        <div class="cols-list"><span>GSTIN</span><span>Invoice No</span><span>Invoice Date</span><span>Taxable Value</span><span>Tax Amount</span><span>IGST</span><span>CGST</span><span>SGST</span></div>
+      </div>
+      <div class="guide">
+        <h3>GSTR-2B from the portal</h3>
+        <ol>
+          <li>Log in to the GST portal and open the Returns Dashboard.</li>
+          <li>Choose the month and open GSTR-2B.</li>
+          <li>Download the Excel file and upload it as it is.</li>
+        </ol>
+        <small>Good to know</small>
+        <p style="color:var(--muted);font-size:15.5px">Portal screens change from time to time, so the steps may look slightly different. If your file has several sheets, the tool uses the one with the invoice rows (usually B2B).</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="compare">
+    <div class="sec-head">
+      <p class="eyebrow">Compared with the alternatives</p>
+      <h2>Why not do it by hand, or ask a chatbot?</h2>
+    </div>
+    <div class="compare">
+      <div class="cmp"><h3>By hand in Excel</h3><ul>
+        <li><b>Effort</b>Lookups and filters for every row, every month.</li>
+        <li><b>Typos in invoice numbers</b>Show up as two separate problems.</li>
+        <li><b>Result</b>You build the report yourself.</li></ul></div>
+      <div class="cmp"><h3>A general chatbot</h3><ul>
+        <li><b>Effort</b>One file at a time, with long prompts you write each time.</li>
+        <li><b>Your data</b>Pasted into a chat window.</li>
+        <li><b>Result</b>A chat reply you copy and tidy up.</li></ul></div>
+      <div class="cmp us"><h3>This tool <span>Built for it</span></h3><ul>
+        <li><b>Effort</b>Pick two files and tap one button.</li>
+        <li><b>Typos in invoice numbers</b>Paired as a possible match, with the amounts shown.</li>
+        <li><b>Result</b>A finished Excel report with a summary and a tab per problem.</li></ul></div>
+    </div>
+  </section>
+
+  <section id="limits">
+    <div class="sec-head">
+      <p class="eyebrow">Honest limits</p>
+      <h2>What it does today, and what it does not do yet.</h2>
+    </div>
+    <div class="split">
+      <div><h3>Does today</h3><ul>
+        <li>Matches on supplier GSTIN plus invoice number, ignoring spaces, capitals and leading zeros.</li>
+        <li>Treats small rounding differences as a match. You choose the limit.</li>
+        <li>Adds up an invoice that appears twice in one file and warns you.</li>
+        <li>Shows ITC at risk and gives you a six-tab Excel report.</li></ul></div>
+      <div class="not"><h3>Not yet</h3><ul>
+        <li>Credit notes, debit notes and amended invoices are not handled as separate sheets.</li>
+        <li>It does not check whether a credit is eligible or blocked under GST rules.</li>
+        <li>It does not file anything or connect to the GST portal.</li>
+        <li>It flags differences for review. A qualified CA should confirm before any claim or filing.</li></ul></div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="sec-head"><p class="eyebrow">Questions</p><h2>Before you try it.</h2></div>
+    <div class="faq">
+      <details><summary>Are my files uploaded anywhere?</summary><p>No. Your browser reads the files and does the matching on your own device. This website has no upload step and no server that receives your files.</p></details>
+      <details><summary>Does it file my return or touch the GST portal?</summary><p>No. It only compares two files and gives you a report. You file on the GST portal yourself.</p></details>
+      <details><summary>What if my columns have different names?</summary><p>The tool recognises common names such as GSTIN of Supplier, Invoice Number, Taxable Value, IGST, CGST and SGST. If a required column is missing, it tells you which one and shows the columns it could read.</p></details>
+      <details><summary>What counts as a match?</summary><p>The same supplier GSTIN and the same invoice number, ignoring spaces, capitals and leading zeros, with the tax within the rounding limit you set. Same supplier and same amounts with a different invoice number shows up as a possible match.</p></details>
+      <details><summary>Is it free?</summary><p>You can try it free right now, with no sign-up.</p></details>
+      <details><summary>Can I rely on the numbers for filing?</summary><p>Treat the report as a checklist of what to review. It is not tax advice, and a qualified CA should confirm results before you claim credit or file.</p></details>
+    </div>
+  </section>
+
+  <section class="feedback" id="feedback">
+    <div>
+      <h2>Tried it? Tell us what to fix.</h2>
+      <p class="lead">Two quick questions: was it useful, and what is missing. Your answers decide what gets built next.</p>
+    </div>
+    <a class="btn ghost" href="https://docs.google.com/forms/d/e/1FAIpQLSchIncYx1BcGhKUtGoIRyH8_yxYPEbvXeY2FDl6jYoJAcWf_A/viewform" target="_blank" rel="noopener">Give feedback</a>
+  </section>
+
+  <section class="band" aria-label="Try the tool">
+    <div>
+      <h2>Check your next filing before you file it.</h2>
+      <p>Start with the sample data to see the report, then upload your own two files. It takes about two minutes.</p>
+    </div>
+    <div class="actions">
+      <a class="btn" href="checker.html">Try it with sample data</a>
+      <span class="note">No sign-up. Files stay in your browser.</span>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="in">
+    <div>
+      <p><b>GST Mismatch Checker</b></p>
+      <p>Sample figures and GSTINs on this page are made up. This tool flags differences for review and is not tax advice.</p>
+    </div>
+    <ul aria-label="Footer links">
+      <li><a href="#why">Why it matters</a></li>
+      <li><a href="#finds">What it finds</a></li>
+      <li><a href="#example">Example</a></li>
+      <li><a href="#files">Your files</a></li>
+      <li><a href="#faq">FAQ</a></li>
+      <li><a href="#feedback">Feedback</a></li>
+      <li><a href="checker.html">Open tool</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+/* Tabs for the worked example. Without script, the first case stays visible. */
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  var panels = Array.prototype.slice.call(document.querySelectorAll('[role="tabpanel"]'));
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener("click", function () { select(tab); });
+    tab.addEventListener("keydown", function (e) {
+      var n = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+      if (n === null) return;
+      var next = tabs[(n + tabs.length) % tabs.length];
+      select(next); next.focus(); e.preventDefault();
+    });
+  });
+  function select(tab) {
+    tabs.forEach(function (t) { t.setAttribute("aria-selected", t === tab ? "true" : "false"); });
+    panels.forEach(function (p) { p.hidden = p.id !== tab.getAttribute("aria-controls"); });
+  }
+})();
+
+/* Count the sample total up once on load. The final figure is already in the page, so nothing depends on this. */
+(function () {
+  var el = document.getElementById("risk-num");
+  if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var target = 81720, start = null, dur = 1100;
+  function frame(t) {
+    if (start === null) start = t;
+    var k = Math.min(1, (t - start) / dur), eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = "₹" + Math.round(target * eased).toLocaleString("en-IN");
+    if (k < 1) requestAnimationFrame(frame); else el.textContent = "₹81,720";
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
